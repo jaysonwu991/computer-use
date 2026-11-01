@@ -1,4 +1,4 @@
-# desktop-use
+# computer-use
 
 Computer Use as a stdio MCP server for any agent on macOS: the running apps, an
 app's accessibility tree, and the actions that drive it.
@@ -45,7 +45,9 @@ app's accessibility tree, and the actions that drive it.
   methods.
 - Accessibility and Screen Recording are user permissions. Ask, explain, and
   fail with instructions; never loop on a permission prompt.
-- The server name `computer-use` is reserved by Claude Code and refused here.
+- The server registers as `computer-use`. Claude Code reserves that exact
+  server name, so `install --client claude` defaults to `computer-use-local` and
+  `--name computer-use` is refused for that client alone.
 
 ## Commands
 
@@ -53,12 +55,12 @@ app's accessibility tree, and the actions that drive it.
 - `cargo test`
 - `cargo clippy --all-targets -- -D warnings`
 - `cargo fmt`
-- `./target/debug/desktop-use tools`
-- `./target/debug/desktop-use doctor`
-- `./target/debug/desktop-use call list_apps`
-- `./target/debug/desktop-use install --client codex --print`
-- `./target/debug/desktop-use apps list`
-- `printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./target/debug/desktop-use mcp`
+- `./target/debug/computer-use tools`
+- `./target/debug/computer-use doctor`
+- `./target/debug/computer-use call list_apps`
+- `./target/debug/computer-use install --client codex --print`
+- `./target/debug/computer-use apps list`
+- `printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./target/debug/computer-use mcp`
 
 ## Conventions
 

@@ -17,10 +17,14 @@ pub struct Policy {
 }
 
 fn path_from(home: Option<&Path>) -> Option<PathBuf> {
-    if let Some(custom) = std::env::var_os("DESKTOP_USE_CONFIG") {
+    if let Some(custom) = std::env::var_os("COMPUTER_USE_CONFIG") {
         return Some(PathBuf::from(custom));
     }
-    home.map(|home| home.join(".config").join("desktop-use").join("config.json"))
+    home.map(|home| {
+        home.join(".config")
+            .join("computer-use")
+            .join("config.json")
+    })
 }
 
 impl Policy {
@@ -60,11 +64,11 @@ impl Policy {
         }
         if self.denied.iter().any(|rule| same(rule, app)) {
             bail!(
-                "`{app}` is on the deny list; allow it with `desktop-use apps allow \"{app}\"` if that is intended"
+                "`{app}` is on the deny list; allow it with `computer-use apps allow \"{app}\"` if that is intended"
             );
         }
         bail!(
-            "`{app}` is not on the allow list, which currently permits {}; add it with `desktop-use apps allow \"{app}\"`",
+            "`{app}` is not on the allow list, which currently permits {}; add it with `computer-use apps allow \"{app}\"`",
             self.allowed.join(", ")
         )
     }
@@ -112,7 +116,8 @@ impl Policy {
     }
 
     fn save(&self) -> Result<()> {
-        let path = Self::path().context("no config path: HOME and DESKTOP_USE_CONFIG are unset")?;
+        let path =
+            Self::path().context("no config path: HOME and COMPUTER_USE_CONFIG are unset")?;
         self.save_to(&path)
     }
 

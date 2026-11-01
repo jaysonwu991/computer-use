@@ -1,4 +1,4 @@
-# desktop-use
+# computer-use
 
 Computer Use as a stdio MCP server for any agent on macOS — Oxide, Claude Code,
 Codex CLI, Cursor, Claude Desktop. It lists the running apps, reads an app's
@@ -10,7 +10,7 @@ the implementation is a single Rust binary with no app bundle,
 of pretending to succeed.
 
 ```text
-agent (Oxide / Claude Code / Codex / Cursor) ──stdio JSON-RPC──▶ desktop-use
+agent (Oxide / Claude Code / Codex / Cursor) ──stdio JSON-RPC──▶ computer-use
                                                    ├─▶ Accessibility (AX) elements, actions, values
                                                    ├─▶ CoreGraphics pointer, keyboard, scroll
                                                    └─▶ window server + screencapture
@@ -27,32 +27,33 @@ agent (Oxide / Claude Code / Codex / Cursor) ──stdio JSON-RPC──▶ deskt
 
 ```sh
 cargo build --release
-install -m 755 target/release/desktop-use ~/.local/bin/desktop-use
+install -m 755 target/release/computer-use ~/.local/bin/computer-use
 ```
 
 ## Connect a client
 
 ```sh
-desktop-use install --client oxide     # ~/.oxide/mcp.json
-desktop-use install --client claude    # ~/.claude.json
-desktop-use install --client codex     # ~/.codex/config.toml
-desktop-use install --client cursor    # ~/.cursor/mcp.json
-desktop-use install --client desktop   # Claude Desktop
-desktop-use install --print            # the entry, for any other client
+computer-use install --client oxide     # ~/.oxide/mcp.json
+computer-use install --client claude    # ~/.claude.json
+computer-use install --client codex     # ~/.codex/config.toml
+computer-use install --client cursor    # ~/.cursor/mcp.json
+computer-use install --client desktop   # Claude Desktop
+computer-use install --print            # the entry, for any other client
 ```
 
-The server registers as `desktop-use`; Claude Code reserves the name
-`computer-use` and skips a server registered under it, so this project refuses
-to write that name. Details and the equivalent per-client commands are in
+It registers as `computer-use`, except for Claude Code: that client reserves
+`computer-use` as a server name and skips a server registered under it, so
+`--client claude` uses `computer-use-local` unless `--name` says otherwise.
+Details and the equivalent per-client commands are in
 [docs/clients.md](docs/clients.md).
 
 ## Check permissions and policy
 
 ```sh
-desktop-use doctor          # permissions, app policy, versions
-desktop-use doctor --prompt # ask macOS to show the permission prompts
-desktop-use apps deny "1Password"
-desktop-use apps list
+computer-use doctor          # permissions, app policy, versions
+computer-use doctor --prompt # ask macOS to show the permission prompts
+computer-use apps deny "1Password"
+computer-use apps list
 ```
 
 ## Tools
@@ -80,15 +81,15 @@ being applied to whatever is there now.
 ## Call it without an agent
 
 ```sh
-desktop-use call list_apps
-desktop-use call get_app_state --args '{"app":"TextEdit","window":0}'
-desktop-use call click --args '{"app":"TextEdit","element_index":12}'
+computer-use call list_apps
+computer-use call get_app_state --args '{"app":"TextEdit","window":0}'
+computer-use call click --args '{"app":"TextEdit","element_index":12}'
 ```
 
 A sequence shares one process and one snapshot state:
 
 ```sh
-desktop-use call --calls '[
+computer-use call --calls '[
   {"tool":"get_app_state","args":{"app":"TextEdit"}},
   {"tool":"select_text","args":{"app":"TextEdit","element_index":9,"text":"Hello"}},
   {"tool":"press_key","args":{"app":"TextEdit","key":"c","modifiers":"cmd"}}

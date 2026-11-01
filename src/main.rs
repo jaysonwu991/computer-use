@@ -19,7 +19,7 @@ use runtime::Runtime;
 
 #[derive(Parser)]
 #[command(
-    name = "desktop-use",
+    name = "computer-use",
     version,
     about = "Computer Use MCP server for any agent: Oxide, Claude Code, Codex or Cursor, driving macOS apps through native accessibility APIs"
 )]
@@ -69,9 +69,10 @@ enum Command {
         /// Write the project-scoped config instead of the user-scoped one.
         #[arg(long)]
         project: bool,
-        /// Server name to register. Claude Code reserves `computer-use`.
-        #[arg(long, default_value = "desktop-use")]
-        name: String,
+        /// Server name to register. Defaults to `computer-use`, or
+        /// `computer-use-local` for Claude Code, which reserves the plain name.
+        #[arg(long)]
+        name: Option<String>,
         /// Print the config entry instead of writing a file.
         #[arg(long)]
         print: bool,
@@ -97,7 +98,7 @@ enum AppsCommand {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("desktop-use: {error:#}");
+        eprintln!("computer-use: {error:#}");
         std::process::exit(1);
     }
 }
@@ -131,7 +132,7 @@ fn run() -> Result<()> {
             project,
             name,
             print,
-        }) => install::install(Client::parse(&client)?, project, &name, print),
+        }) => install::install(Client::parse(&client)?, project, name.as_deref(), print),
         Some(Command::Apps { command }) => apps(command),
     }
 }
@@ -273,7 +274,7 @@ fn doctor(as_json: bool, prompt: bool) -> Result<()> {
             }))?
         );
     } else {
-        println!("desktop-use {}", env!("CARGO_PKG_VERSION"));
+        println!("computer-use {}", env!("CARGO_PKG_VERSION"));
         println!(
             "macOS: {}",
             version.clone().unwrap_or_else(|| "unknown".to_string())

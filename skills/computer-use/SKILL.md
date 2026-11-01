@@ -1,14 +1,15 @@
 ---
-name: desktop-use
-description: Drive this Mac's apps through the desktop-use MCP server — list apps, read an accessibility tree, then click, type, select, scroll or drag. Use when a task needs a GUI app the agent cannot reach through files or a CLI.
+name: computer-use
+description: Drive this Mac's apps through the computer-use MCP server — list apps, read an accessibility tree, then click, type, select, scroll or drag. Use when a task needs a GUI app the agent cannot reach through files or a CLI.
 ---
 
-# Desktop Use
+# Computer Use
 
-The `desktop-use` MCP server exposes the desktop as tools. Reading is cheap;
+The `computer-use` MCP server exposes the desktop as tools. Reading is cheap;
 acting moves the real pointer and keyboard, so look first and act on what you
-saw. `desktop-use install` registers it under `desktop-use`, and the tool names
-are the same whatever a client calls the server.
+saw. `computer-use install` registers it under `computer-use`, or
+`computer-use-local` for Claude Code, which reserves the plain name; the tool
+names are identical either way.
 
 ## Loop
 
@@ -52,9 +53,9 @@ are the same whatever a client calls the server.
 ## Failures worth reading
 
 - `` `X` is on the deny list `` or `` not on the allow list `` — the local app
-  policy. `desktop-use apps allow "X"` changes it; do not work around it.
+  policy. `computer-use apps allow "X"` changes it; do not work around it.
 - `Accessibility permission is missing` — the terminal running the server is not
-  trusted. Run `desktop-use doctor --prompt`, approve it in System
+  trusted. Run `computer-use doctor --prompt`, approve it in System
   Settings → Privacy & Security → Accessibility, then restart the server.
 - `kAXErrorCannotComplete` — the app is busy, modal, or unresponsive. Wait, then
   read the tree again rather than repeating the click.
