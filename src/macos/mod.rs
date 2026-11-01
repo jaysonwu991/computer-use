@@ -714,7 +714,7 @@ impl Runtime {
     pub fn guard(&self) -> Result<()> {
         if !ax::trusted() {
             bail!(
-                "Accessibility permission is missing: run `oxide-computer-use doctor` and approve this terminal in System Settings → Privacy & Security → Accessibility"
+                "Accessibility permission is missing: run `desktop-use doctor` and approve this terminal in System Settings → Privacy & Security → Accessibility"
             );
         }
         Ok(())

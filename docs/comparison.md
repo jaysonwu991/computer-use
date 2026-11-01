@@ -6,7 +6,7 @@ one binary, strict action semantics, and an installer for every client. It is
 not a replacement for a cross-platform project: `open-computer-use` ships
 macOS, Linux and Windows runtimes, and Codex Computer Use ships a product.
 
-| | oxide-computer-use | open-computer-use | Codex Computer Use |
+| | desktop-use | open-computer-use | Codex Computer Use |
 | --- | --- | --- | --- |
 | Platforms | macOS only; other builds return an explicit error | macOS, Linux, Windows | macOS |
 | Distribution | one Rust binary (`cargo build --release`) | npm package, app bundle, onboarding app | part of Codex |

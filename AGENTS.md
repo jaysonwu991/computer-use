@@ -1,4 +1,4 @@
-# oxide-computer-use
+# desktop-use
 
 Computer Use as a stdio MCP server for any agent on macOS: the running apps, an
 app's accessibility tree, and the actions that drive it.
@@ -53,12 +53,12 @@ app's accessibility tree, and the actions that drive it.
 - `cargo test`
 - `cargo clippy --all-targets -- -D warnings`
 - `cargo fmt`
-- `./target/debug/oxide-computer-use tools`
-- `./target/debug/oxide-computer-use doctor`
-- `./target/debug/oxide-computer-use call list_apps`
-- `./target/debug/oxide-computer-use install --client codex --print`
-- `./target/debug/oxide-computer-use apps list`
-- `printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./target/debug/oxide-computer-use mcp`
+- `./target/debug/desktop-use tools`
+- `./target/debug/desktop-use doctor`
+- `./target/debug/desktop-use call list_apps`
+- `./target/debug/desktop-use install --client codex --print`
+- `./target/debug/desktop-use apps list`
+- `printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./target/debug/desktop-use mcp`
 
 ## Conventions
 

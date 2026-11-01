@@ -1,15 +1,14 @@
 [package]
-name = "oxide-computer-use"
+name = "desktop-use"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
-description = "Computer Use MCP server and CLI for Oxide: drive desktop apps through native accessibility APIs"
+description = "Computer Use MCP server and CLI: drive desktop apps through native accessibility APIs"
 license = "MIT"
-repository = "https://github.com/jayson/oxide-computer-use"
 readme = "README.md"
 
 [[bin]]
-name = "oxide-computer-use"
+name = "desktop-use"
 path = "src/main.rs"
 
 [dependencies]

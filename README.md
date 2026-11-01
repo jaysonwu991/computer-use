@@ -1,4 +1,4 @@
-# oxide-computer-use
+# desktop-use
 
 Computer Use as a stdio MCP server for any agent on macOS — Oxide, Claude Code,
 Codex CLI, Cursor, Claude Desktop. It lists the running apps, reads an app's
@@ -10,7 +10,7 @@ the implementation is a single Rust binary with no app bundle,
 of pretending to succeed.
 
 ```text
-agent (Oxide / Claude Code / Codex / Cursor) ──stdio JSON-RPC──▶ oxide-computer-use
+agent (Oxide / Claude Code / Codex / Cursor) ──stdio JSON-RPC──▶ desktop-use
                                                    ├─▶ Accessibility (AX) elements, actions, values
                                                    ├─▶ CoreGraphics pointer, keyboard, scroll
                                                    └─▶ window server + screencapture
@@ -27,21 +27,21 @@ agent (Oxide / Claude Code / Codex / Cursor) ──stdio JSON-RPC──▶ oxide
 
 ```sh
 cargo build --release
-install -m 755 target/release/oxide-computer-use ~/.local/bin/oxide-computer-use
+install -m 755 target/release/desktop-use ~/.local/bin/desktop-use
 ```
 
 ## Connect a client
 
 ```sh
-oxide-computer-use install --client oxide     # ~/.oxide/mcp.json
-oxide-computer-use install --client claude    # ~/.claude.json
-oxide-computer-use install --client codex     # ~/.codex/config.toml
-oxide-computer-use install --client cursor    # ~/.cursor/mcp.json
-oxide-computer-use install --client desktop   # Claude Desktop
-oxide-computer-use install --print            # the entry, for any other client
+desktop-use install --client oxide     # ~/.oxide/mcp.json
+desktop-use install --client claude    # ~/.claude.json
+desktop-use install --client codex     # ~/.codex/config.toml
+desktop-use install --client cursor    # ~/.cursor/mcp.json
+desktop-use install --client desktop   # Claude Desktop
+desktop-use install --print            # the entry, for any other client
 ```
 
-The server registers as `oxide-computer-use`; Claude Code reserves the name
+The server registers as `desktop-use`; Claude Code reserves the name
 `computer-use` and skips a server registered under it, so this project refuses
 to write that name. Details and the equivalent per-client commands are in
 [docs/clients.md](docs/clients.md).
@@ -49,10 +49,10 @@ to write that name. Details and the equivalent per-client commands are in
 ## Check permissions and policy
 
 ```sh
-oxide-computer-use doctor          # permissions, app policy, versions
-oxide-computer-use doctor --prompt # ask macOS to show the permission prompts
-oxide-computer-use apps deny "1Password"
-oxide-computer-use apps list
+desktop-use doctor          # permissions, app policy, versions
+desktop-use doctor --prompt # ask macOS to show the permission prompts
+desktop-use apps deny "1Password"
+desktop-use apps list
 ```
 
 ## Tools
@@ -80,15 +80,15 @@ being applied to whatever is there now.
 ## Call it without an agent
 
 ```sh
-oxide-computer-use call list_apps
-oxide-computer-use call get_app_state --args '{"app":"TextEdit","window":0}'
-oxide-computer-use call click --args '{"app":"TextEdit","element_index":12}'
+desktop-use call list_apps
+desktop-use call get_app_state --args '{"app":"TextEdit","window":0}'
+desktop-use call click --args '{"app":"TextEdit","element_index":12}'
 ```
 
 A sequence shares one process and one snapshot state:
 
 ```sh
-oxide-computer-use call --calls '[
+desktop-use call --calls '[
   {"tool":"get_app_state","args":{"app":"TextEdit"}},
   {"tool":"select_text","args":{"app":"TextEdit","element_index":9,"text":"Hello"}},
   {"tool":"press_key","args":{"app":"TextEdit","key":"c","modifiers":"cmd"}}

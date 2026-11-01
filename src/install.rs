@@ -161,7 +161,7 @@ fn validate_name(name: &str) -> Result<()> {
     }
     if name == "computer-use" {
         bail!(
-            "`computer-use` is reserved by Claude Code, which skips a server configured under that name; pick another, such as oxide-computer-use"
+            "`computer-use` is reserved by Claude Code, which skips a server configured under that name; pick another, such as desktop-use"
         );
     }
     Ok(())
@@ -228,7 +228,7 @@ fn write_atomically(path: &Path, contents: &str) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    let temporary = path.with_extension("oxide-tmp");
+    let temporary = path.with_extension("desktop-use-tmp");
     std::fs::write(&temporary, contents)
         .with_context(|| format!("writing {}", temporary.display()))?;
     std::fs::rename(&temporary, path).with_context(|| format!("replacing {}", path.display()))?;
@@ -251,14 +251,14 @@ mod tests {
     fn reserved_and_odd_names_are_rejected() {
         assert!(validate_name("computer-use").is_err());
         assert!(validate_name("my server").is_err());
-        assert!(validate_name("oxide-computer-use").is_ok());
+        assert!(validate_name("desktop-use").is_ok());
     }
 
     #[test]
     fn a_toml_snippet_uses_the_codex_table_shape() {
-        let text = snippet(Client::Codex, Path::new("/bin/oxide-computer-use"), "cu");
+        let text = snippet(Client::Codex, Path::new("/bin/desktop-use"), "cu");
         assert!(text.contains("[mcp_servers.cu]"));
-        assert!(text.contains("command = \"/bin/oxide-computer-use\""));
+        assert!(text.contains("command = \"/bin/desktop-use\""));
         assert!(text.contains("args = [\"mcp\"]"));
     }
 

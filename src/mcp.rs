@@ -69,7 +69,7 @@ fn handle(runtime: &mut Runtime, request: &Value) -> Option<Value> {
             ),
             "capabilities": { "tools": { "listChanged": false } },
             "serverInfo": {
-                "name": "oxide-computer-use",
+                "name": "desktop-use",
                 "version": env!("CARGO_PKG_VERSION")
             },
             "instructions": "Drive desktop apps through accessibility trees. Call list_apps, then get_app_state, then act on element_index values from the newest snapshot."
@@ -135,7 +135,7 @@ mod tests {
         );
         assert_eq!(
             response["result"]["serverInfo"]["name"],
-            json!("oxide-computer-use")
+            json!("desktop-use")
         );
         assert!(response["result"]["capabilities"]["tools"].is_object());
     }
