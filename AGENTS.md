@@ -24,8 +24,12 @@ app's accessibility tree, and the actions that drive it.
   `input` (paced synthetic events from a private HID source), `screen`
   (screenshot), `cf` (Core Foundation bridging).
 - `tests/cli.rs`: the binary as an MCP client sees it.
-- `docs/`: `clients.md` (per-client setup), `comparison.md`, `issues.md` (audit
-  against the open-computer-use tracker).
+- `docs/`: `tools.md` (the tool reference a test checks against `specs()`),
+  `architecture.md`, `configuration.md`, `clients.md`, `troubleshooting.md`,
+  `development.md`, `comparison.md`, and `issues.md` (audit against the
+  open-computer-use tracker). A behaviour change updates the relevant page in the
+  same commit; a new or renamed tool updates `docs/tools.md` and the README table,
+  which `tools::tests` enforces.
 
 ## Contracts to keep
 

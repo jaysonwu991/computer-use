@@ -136,7 +136,17 @@ docs/              clients, comparison, issue audit
 
 ## Documentation
 
+- [docs/tools.md](docs/tools.md) — every tool: parameters, defaults, reply
+  shape, failure modes.
+- [docs/architecture.md](docs/architecture.md) — modules, request flow, snapshot
+  and index lifecycle, FFI ownership, MCP behaviour.
+- [docs/configuration.md](docs/configuration.md) — policy file, per-client config
+  paths, defaults, permissions, exit codes.
 - [docs/clients.md](docs/clients.md) — install and use it from each MCP client.
+- [docs/troubleshooting.md](docs/troubleshooting.md) — symptoms, causes and
+  fixes, including the accessibility error codes.
+- [docs/development.md](docs/development.md) — tests, adding a tool, a client or
+  a platform backend, and the manual smoke checklist.
 - [docs/comparison.md](docs/comparison.md) — how it differs from
   `open-computer-use` and Codex Computer Use, including where the others win.
 - [docs/issues.md](docs/issues.md) — an audit against the

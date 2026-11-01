@@ -310,6 +310,22 @@ mod tests {
     }
 
     #[test]
+    fn every_tool_is_documented() {
+        let tools_doc = include_str!("../docs/tools.md");
+        let readme = include_str!("../README.md");
+        for name in names() {
+            assert!(
+                tools_doc.contains(&format!("### `{name}`")),
+                "docs/tools.md needs a section for {name}"
+            );
+            assert!(
+                readme.contains(&format!("| `{name}` |")),
+                "README.md needs a table row for {name}"
+            );
+        }
+    }
+
+    #[test]
     fn tool_names_are_unique() {
         let mut names = names();
         names.sort();
