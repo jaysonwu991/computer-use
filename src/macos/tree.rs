@@ -26,6 +26,9 @@ pub struct Node {
     pub depth: usize,
     pub text: String,
     pub center: Option<CGPoint>,
+    /// The `AXWindow` this element lives in, so an action can tell that the
+    /// element moved to another window instead of acting on the wrong one.
+    pub window: Option<Element>,
 }
 
 pub struct Snapshot {
@@ -105,7 +108,13 @@ fn describe(element: &Element, limits: &Limits, center: Option<CGPoint>) -> Stri
     parts.join(" ")
 }
 
-fn walk(element: &Element, depth: usize, limits: &Limits, out: &mut Vec<Node>) -> bool {
+fn walk(
+    element: &Element,
+    depth: usize,
+    limits: &Limits,
+    window: Option<&Element>,
+    out: &mut Vec<Node>,
+) -> bool {
     if out.len() >= limits.max_nodes || depth > limits.max_depth {
         return false;
     }
@@ -113,6 +122,11 @@ fn walk(element: &Element, depth: usize, limits: &Limits, out: &mut Vec<Node>) -
     let role = element.role();
     let center = element.center();
     let flat = FLAT_ROLES.contains(&role.as_str());
+    let bound = if role == "AXWindow" {
+        Some(element.retained())
+    } else {
+        window.map(Element::retained)
+    };
 
     let label = describe(element, limits, center);
     let visible =
@@ -125,6 +139,7 @@ fn walk(element: &Element, depth: usize, limits: &Limits, out: &mut Vec<Node>) -
             depth: node_depth,
             text: label,
             center,
+            window: bound.clone(),
         });
     }
 
@@ -133,16 +148,16 @@ fn walk(element: &Element, depth: usize, limits: &Limits, out: &mut Vec<Node>) -
         if out.len() >= limits.max_nodes {
             return false;
         }
-        if !walk(&child, depth + 1, limits, out) {
+        if !walk(&child, depth + 1, limits, bound.as_ref(), out) {
             complete = false;
         }
     }
     complete
 }
 
-pub fn snapshot(app: &Element, limits: &Limits) -> Snapshot {
+pub fn snapshot(app: &Element, limits: &Limits, window: Option<&Element>) -> Snapshot {
     let mut nodes = Vec::new();
-    let complete = walk(app, 0, limits, &mut nodes);
+    let complete = walk(app, 0, limits, window, &mut nodes);
     Snapshot {
         nodes,
         truncated: !complete,

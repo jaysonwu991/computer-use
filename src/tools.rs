@@ -5,7 +5,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde_json::{json, Value};
 
-use crate::runtime::Runtime;
+use crate::runtime::{Runtime, State};
 
 pub struct Outcome {
     pub text: String,
@@ -13,161 +13,188 @@ pub struct Outcome {
 }
 
 const APP: &str = "Running app name (or pid) exactly as `list_apps` reports it";
+const WINDOW: &str =
+    "Bind to one window: a zero-based index or a title substring, as listed by get_app_state";
+const MAX_OUTPUT: &str = "Cap on the reply text in characters (default 20000)";
+
+fn readonly(properties: Value, required: &[&str], description: &str, name: &str) -> Value {
+    json!({
+        "name": name,
+        "description": description,
+        "annotations": { "readOnlyHint": true, "destructiveHint": false },
+        "inputSchema": {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": false
+        }
+    })
+}
+
+fn action(
+    properties: Value,
+    required: &[&str],
+    description: &str,
+    name: &str,
+    idempotent: bool,
+) -> Value {
+    json!({
+        "name": name,
+        "description": description,
+        "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": idempotent },
+        "inputSchema": {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": false
+        }
+    })
+}
 
 pub fn specs() -> Value {
     json!([
-        {
-            "name": "list_apps",
-            "description": "List the running apps that own on-screen windows, with their pid and window titles.",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-        },
-        {
-            "name": "get_app_state",
-            "description": "Read one app's accessibility tree as indexed lines. Element indexes from the newest snapshot are what click, set_value, perform_secondary_action, drag and scroll take.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "app": { "type": "string", "description": APP },
-                    "text_limit": { "description": "Characters shown per text value; a number, or \"max\" for full values." },
-                    "max_tree_nodes": { "type": "integer", "description": "Node budget before the tree is reported truncated (default 1200)." },
-                    "max_tree_depth": { "type": "integer", "description": "Depth limit before the tree is reported truncated (default 64)." },
-                    "include_frames": { "type": "boolean", "description": "Append each element's on-screen center, for coordinate actions." }
-                },
-                "required": ["app"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "query",
-            "description": "Search one app's accessibility tree by text and/or role without printing the whole tree. Refreshes the element indexes.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "app": { "type": "string", "description": APP },
-                    "text": { "type": "string", "description": "Case-insensitive substring of role, title, description or value." },
-                    "role": { "type": "string", "description": "Case-insensitive role filter, such as AXButton." },
-                    "max_results": { "type": "integer", "description": "Default 20." }
-                },
-                "required": ["app"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "click",
-            "description": "Activate an element. Uses the element's AXPress action when it has one, and otherwise posts a pointer click at the element center (or at x/y).",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "app": { "type": "string", "description": APP },
-                    "element_index": { "type": "integer", "description": "Index from the newest get_app_state or query." },
-                    "x": { "type": "number" },
-                    "y": { "type": "number" },
-                    "button": { "type": "string", "enum": ["left", "right"], "description": "Default left." }
-                },
-                "required": ["app"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "perform_secondary_action",
-            "description": "Perform a named accessibility action on an element, such as AXShowMenu, AXIncrement or AXConfirm.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "app": { "type": "string", "description": APP },
-                    "element_index": { "type": "integer" },
-                    "action": { "type": "string", "description": "Default AXPress." }
-                },
-                "required": ["app", "element_index"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "set_value",
-            "description": "Write a string into an editable element's AXValue and read it back. Prefer this over typing for text fields.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "app": { "type": "string", "description": APP },
-                    "element_index": { "type": "integer" },
-                    "value": { "type": "string" }
-                },
-                "required": ["app", "element_index", "value"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "type_text",
-            "description": "Type text into the focused control of an app (activates the app, and focuses element_index first when given).",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "text": { "type": "string" },
-                    "app": { "type": "string", "description": APP },
-                    "element_index": { "type": "integer" }
-                },
-                "required": ["text"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "press_key",
-            "description": "Press one key, optionally with modifiers. Key names: Return, Tab, Escape, Space, Delete, Forward_Delete, Home, End, Page_Up, Page_Down, Left, Right, Up, Down, F1-F12 or a single character. Modifiers: cmd, shift, alt, ctrl.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "key": { "type": "string" },
-                    "modifiers": { "type": "string", "description": "For example \"cmd+shift\"." },
-                    "app": { "type": "string", "description": APP }
-                },
-                "required": ["key"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "scroll",
-            "description": "Scroll the app's frontmost window, or the pointer position when x/y or element_index is given.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "app": { "type": "string", "description": APP },
-                    "direction": { "type": "string", "enum": ["up", "down"], "description": "Default down." },
-                    "lines": { "type": "integer", "description": "Default 3." },
-                    "element_index": { "type": "integer" },
-                    "x": { "type": "number" },
-                    "y": { "type": "number" }
-                },
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "drag",
-            "description": "Drag with the left button from an element center or from_x/from_y to to_x/to_y. Moves the real pointer.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "app": { "type": "string", "description": APP },
-                    "element_index": { "type": "integer" },
-                    "from_x": { "type": "number" },
-                    "from_y": { "type": "number" },
-                    "to_x": { "type": "number" },
-                    "to_y": { "type": "number" }
-                },
-                "required": ["to_x", "to_y"],
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "screenshot",
-            "description": "Capture the screen, or one app's largest window, as a PNG image. Needs Screen Recording permission.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "app": { "type": "string", "description": "Omit to capture the whole screen." }
-                },
-                "additionalProperties": false
-            }
-        }
+        readonly(
+            json!({
+                "include_helpers": { "type": "boolean", "description": "Also show window-server helpers such as a native file picker that is not part of its app." }
+            }),
+            &[],
+            "List the running apps that own windows, with their pid, window titles and any app blocked by the local policy.",
+            "list_apps"
+        ),
+        readonly(
+            json!({
+                "app": { "type": "string", "description": APP },
+                "window": { "type": "string", "description": WINDOW },
+                "text_limit": { "description": "Characters shown per text value; a number, or \"max\" for full values." },
+                "max_tree_nodes": { "type": "integer", "description": "Node budget before the tree is reported truncated (default 1200)." },
+                "max_tree_depth": { "type": "integer", "description": "Depth limit before the tree is reported truncated (default 64)." },
+                "include_frames": { "type": "boolean", "description": "Append each element's on-screen center, for coordinate actions." },
+                "include_screenshot": { "type": "boolean", "description": "Attach one PNG of the same window, for when the tree is not enough." },
+                "max_output_chars": { "type": "integer", "description": MAX_OUTPUT }
+            }),
+            &["app"],
+            "Read one app's accessibility tree as indexed lines. Element indexes from the newest snapshot are what click, set_value, select_text, perform_secondary_action, drag and scroll take, and they are bound to the window they came from.",
+            "get_app_state"
+        ),
+        readonly(
+            json!({
+                "app": { "type": "string", "description": APP },
+                "window": { "type": "string", "description": WINDOW },
+                "text": { "type": "string", "description": "Case-insensitive substring of role, title, description or value." },
+                "role": { "type": "string", "description": "Case-insensitive role filter, such as AXButton." },
+                "max_results": { "type": "integer", "description": "Default 20." },
+                "max_tree_nodes": { "type": "integer", "description": "Node budget while searching (default 1200)." },
+                "max_output_chars": { "type": "integer", "description": MAX_OUTPUT }
+            }),
+            &["app"],
+            "Search one app's accessibility tree by text and/or role without printing the whole tree. Refreshes the element indexes.",
+            "query"
+        ),
+        action(
+            json!({
+                "app": { "type": "string", "description": APP },
+                "element_index": { "type": "integer", "description": "Index from the newest get_app_state or query." },
+                "x": { "type": "number" },
+                "y": { "type": "number" },
+                "button": { "type": "string", "enum": ["left", "right"], "description": "Default left." }
+            }),
+            &["app"],
+            "Activate an element. Uses the element's AXPress action when it has one, and otherwise posts a pointer click at the element center (or at x/y); the reply says which path ran.",
+            "click",
+            false
+        ),
+        action(
+            json!({
+                "app": { "type": "string", "description": APP },
+                "element_index": { "type": "integer" },
+                "action": { "type": "string", "description": "Default AXPress; an unsupported action is refused with the list of actions the element does support." }
+            }),
+            &["app", "element_index"],
+            "Perform a named accessibility action on an element, such as AXShowMenu, AXIncrement or AXConfirm.",
+            "perform_secondary_action",
+            false
+        ),
+        action(
+            json!({
+                "app": { "type": "string", "description": APP },
+                "element_index": { "type": "integer" },
+                "value": { "type": "string" }
+            }),
+            &["app", "element_index", "value"],
+            "Write a string into an editable element's AXValue and read it back. A control that is not settable, or that ignores the write, fails instead of reporting success.",
+            "set_value",
+            true
+        ),
+        action(
+            json!({
+                "app": { "type": "string", "description": APP },
+                "element_index": { "type": "integer", "description": "Defaults to the app's focused text element." },
+                "text": { "type": "string", "description": "The text to select inside the element." }
+            }),
+            &["app", "text"],
+            "Select a piece of text inside a text element, for reading or for a following action such as copy.",
+            "select_text",
+            true
+        ),
+        action(
+            json!({
+                "text": { "type": "string" },
+                "app": { "type": "string", "description": APP },
+                "element_index": { "type": "integer" }
+            }),
+            &["text"],
+            "Type text into the focused control of an app (activates the app, and focuses element_index first when given).",
+            "type_text",
+            false
+        ),
+        action(
+            json!({
+                "key": { "type": "string" },
+                "modifiers": { "type": "string", "description": "For example \"cmd+shift\"." },
+                "app": { "type": "string", "description": APP }
+            }),
+            &["key"],
+            "Press one key, optionally with modifiers. Key names: Return, Tab, Escape, Space, Delete, Forward_Delete, Home, End, Page_Up, Page_Down, Left, Right, Up, Down, F1-F12 or a single character. Modifiers: cmd, shift, alt, ctrl.",
+            "press_key",
+            false
+        ),
+        action(
+            json!({
+                "app": { "type": "string", "description": APP },
+                "direction": { "type": "string", "enum": ["up", "down"], "description": "Default down." },
+                "lines": { "type": "integer", "description": "Default 3." },
+                "element_index": { "type": "integer" },
+                "x": { "type": "number" },
+                "y": { "type": "number" }
+            }),
+            &[],
+            "Scroll the app's frontmost window, or the pointer position when x/y or element_index is given. No snapshot is required.",
+            "scroll",
+            false
+        ),
+        action(
+            json!({
+                "app": { "type": "string", "description": APP },
+                "element_index": { "type": "integer" },
+                "from_x": { "type": "number" },
+                "from_y": { "type": "number" },
+                "to_x": { "type": "number" },
+                "to_y": { "type": "number" }
+            }),
+            &["to_x", "to_y"],
+            "Drag with the left button from an element center or from_x/from_y to to_x/to_y. Paced pointer events, so it moves windows and selects text rather than posting one lost event.",
+            "drag",
+            false
+        ),
+        readonly(
+            json!({
+                "app": { "type": "string", "description": "Omit to capture the whole screen." },
+                "window": { "type": "string", "description": "With app: an index or title substring to pick the window." }
+            }),
+            &[],
+            "Capture the screen, or one app's window, as a PNG image. Needs Screen Recording permission.",
+            "screenshot"
+        )
     ])
 }
 
@@ -188,44 +215,29 @@ pub fn execute(runtime: &mut Runtime, name: &str, args: &Value) -> Result<Outcom
         });
     }
 
+    if name == "get_app_state" {
+        let State { text, image } = runtime.get_app_state(args)?;
+        return Ok(Outcome {
+            text,
+            images: image.into_iter().collect(),
+        });
+    }
+
     let text = match name {
-        "list_apps" => runtime.list_apps()?,
-        "get_app_state" => {
-            runtime.guard()?;
-            runtime.get_app_state(args)?
-        }
-        "query" => {
-            runtime.guard()?;
-            runtime.query(args)?
-        }
-        "click" => {
-            runtime.guard()?;
-            runtime.click(args)?
-        }
-        "perform_secondary_action" => {
-            runtime.guard()?;
-            runtime.perform_action(args)?
-        }
-        "set_value" => {
-            runtime.guard()?;
-            runtime.set_value(args)?
-        }
-        "type_text" => {
-            runtime.guard()?;
-            runtime.type_text(args)?
-        }
-        "press_key" => {
-            runtime.guard()?;
-            runtime.press_key(args)?
-        }
-        "scroll" => {
-            runtime.guard()?;
-            runtime.scroll(args)?
-        }
-        "drag" => {
-            runtime.guard()?;
-            runtime.drag(args)?
-        }
+        "list_apps" => runtime.list_apps(
+            args.get("include_helpers")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )?,
+        "query" => runtime.query(args)?,
+        "click" => runtime.click(args)?,
+        "perform_secondary_action" => runtime.perform_action(args)?,
+        "set_value" => runtime.set_value(args)?,
+        "select_text" => runtime.select_text(args)?,
+        "type_text" => runtime.type_text(args)?,
+        "press_key" => runtime.press_key(args)?,
+        "scroll" => runtime.scroll(args)?,
+        "drag" => runtime.drag(args)?,
         other => bail!("unknown tool `{other}`; call tools/list for the available tools"),
     };
     Ok(Outcome {
@@ -265,10 +277,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_tool_declares_a_description_and_an_object_schema() {
+    fn every_tool_declares_a_description_a_schema_and_annotations() {
         let tools = specs();
         let tools = tools.as_array().expect("specs is an array");
-        assert_eq!(tools.len(), 11);
+        assert_eq!(tools.len(), 12);
         for tool in tools {
             let name = tool["name"].as_str().expect("a tool has a name");
             assert!(
@@ -276,6 +288,24 @@ mod tests {
                 "{name} needs a usable description"
             );
             assert_eq!(tool["inputSchema"]["type"], json!("object"), "{name}");
+            assert!(
+                tool["annotations"]["readOnlyHint"].is_boolean(),
+                "{name} needs a read-only hint so clients can approve it sensibly"
+            );
+        }
+    }
+
+    #[test]
+    fn observers_are_read_only_and_actions_are_not() {
+        let tools = specs();
+        let tools = tools.as_array().expect("specs is an array");
+        for tool in tools {
+            let name = tool["name"].as_str().unwrap_or_default();
+            let read_only = tool["annotations"]["readOnlyHint"]
+                .as_bool()
+                .unwrap_or(false);
+            let expected = matches!(name, "list_apps" | "get_app_state" | "query" | "screenshot");
+            assert_eq!(read_only, expected, "{name} has the wrong read-only hint");
         }
     }
 

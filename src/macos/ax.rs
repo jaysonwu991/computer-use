@@ -28,6 +28,14 @@ type AXUIElementRef = CFTypeRef;
 
 const AX_VALUE_CG_POINT: u32 = 1;
 const AX_VALUE_CG_SIZE: u32 = 2;
+const AX_VALUE_CF_RANGE: u32 = 4;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CFRange {
+    pub location: isize,
+    pub length: isize,
+}
 
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
@@ -38,6 +46,18 @@ extern "C" {
         value: *mut CFTypeRef,
     ) -> i32;
     fn AXUIElementCopyActionNames(element: AXUIElementRef, names: *mut CFArrayRef) -> i32;
+    fn AXUIElementCopyParameterizedAttributeValue(
+        element: AXUIElementRef,
+        attribute: CFTypeRef,
+        parameter: CFTypeRef,
+        value: *mut CFTypeRef,
+    ) -> i32;
+    fn AXUIElementIsAttributeSettable(
+        element: AXUIElementRef,
+        attribute: CFTypeRef,
+        settable: *mut bool,
+    ) -> i32;
+    fn AXValueCreate(the_type: u32, value: *const c_void) -> CFTypeRef;
     fn AXUIElementSetAttributeValue(
         element: AXUIElementRef,
         attribute: CFTypeRef,
@@ -205,6 +225,118 @@ impl Element {
         }
     }
 
+    /// Whether writing `attribute` would be accepted; a settable element that
+    /// ignores the write is still possible, which is why `set_value` reads back.
+    pub fn is_settable(&self, attribute: &str) -> bool {
+        unsafe {
+            let Some(key) = cf::string(attribute) else {
+                return false;
+            };
+            let mut settable = false;
+            let code = AXUIElementIsAttributeSettable(self.raw, key.raw(), &mut settable);
+            code == 0 && settable
+        }
+    }
+
+    /// An attribute whose value is a single element, such as `AXParent`.
+    pub fn element_attribute(&self, name: &str) -> Option<Element> {
+        let value = self.attribute(name)?;
+        unsafe { Element::from_get(value.raw()) }
+    }
+
+    /// The nearest ancestor whose role is `AXWindow`, which is what binds an
+    /// element index to one window.
+    pub fn window(&self) -> Option<Element> {
+        let mut current = self.retained();
+        for _ in 0..64 {
+            if current.role() == "AXWindow" {
+                return Some(current);
+            }
+            current = current.element_attribute("AXParent")?;
+        }
+        None
+    }
+
+    pub fn number_attribute(&self, name: &str) -> Option<f64> {
+        self.attribute(name)
+            .and_then(|value| cf::number(value.raw()))
+    }
+
+    pub fn character_count(&self) -> Option<usize> {
+        self.number_attribute("AXNumberOfCharacters")
+            .map(|count| count.max(0.0) as usize)
+    }
+
+    pub fn same_element(&self, other: &Element) -> bool {
+        unsafe { core_foundation_sys::base::CFEqual(self.raw, other.raw) != 0 }
+    }
+
+    pub fn focused_element(&self) -> Option<Element> {
+        self.element_attribute("AXFocusedUIElement")
+    }
+
+    fn parameterized(&self, attribute: &str, parameter: CFTypeRef) -> Option<cf::Owned> {
+        unsafe {
+            let key = cf::string(attribute)?;
+            let mut value: CFTypeRef = std::ptr::null();
+            let code = AXUIElementCopyParameterizedAttributeValue(
+                self.raw,
+                key.raw(),
+                parameter,
+                &mut value,
+            );
+            if code != 0 {
+                return None;
+            }
+            cf::Owned::from_create(value)
+        }
+    }
+
+    /// Reads a span of the element's text, for app text that exposes no
+    /// `AXValue` string.
+    pub fn string_for_range(&self, range: CFRange) -> Option<String> {
+        unsafe {
+            let value = AXValueCreate(AX_VALUE_CF_RANGE, &range as *const CFRange as *const c_void);
+            let value = cf::Owned::from_create(value)?;
+            let text = self.parameterized("AXStringForRange", value.raw())?;
+            cf::string_from(text.raw())
+        }
+    }
+
+    pub fn text(&self) -> Option<String> {
+        self.string_value().or_else(|| {
+            let count = self.character_count().filter(|count| *count > 0)?;
+            self.string_for_range(CFRange {
+                location: 0,
+                length: count as isize,
+            })
+        })
+    }
+
+    /// Selects a character range, which is how `select_text` marks text.
+    pub fn select_range(&self, range: CFRange) -> Result<()> {
+        unsafe {
+            let value = AXValueCreate(AX_VALUE_CF_RANGE, &range as *const CFRange as *const c_void);
+            let Some(value) = cf::Owned::from_create(value) else {
+                bail!("could not build an AX range value");
+            };
+            let key =
+                cf::string("AXSelectedTextRange").ok_or_else(|| anyhow!("unknown attribute"))?;
+            check(
+                AXUIElementSetAttributeValue(self.raw, key.raw(), value.raw()),
+                "AXSelectedTextRange",
+            )
+        }
+    }
+
+    pub fn selected_text(&self) -> Option<String> {
+        self.string_attribute("AXSelectedText")
+    }
+
+    pub fn string_value(&self) -> Option<String> {
+        self.string_attribute("AXValue")
+    }
+
     pub fn perform(&self, action: &str) -> Result<()> {
         unsafe {
             let name = cf::string(action).ok_or_else(|| anyhow!("invalid action name"))?;
@@ -289,6 +421,12 @@ impl Element {
             x: point.x + size.width / 2.0,
             y: point.y + size.height / 2.0,
         })
+    }
+}
+
+impl Clone for Element {
+    fn clone(&self) -> Self {
+        self.retained()
     }
 }
 

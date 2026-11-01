@@ -1,5 +1,12 @@
 //! Platform selection for the computer-use runtime.
 
+/// What one observation returns: the text an agent reads, plus an optional
+/// screenshot kept separate so it never inflates the text.
+pub struct State {
+    pub text: String,
+    pub image: Option<Vec<u8>>,
+}
+
 #[cfg(target_os = "macos")]
 pub use crate::macos::Runtime;
 
@@ -7,6 +14,8 @@ pub use crate::macos::Runtime;
 mod unsupported {
     use anyhow::{bail, Result};
     use serde_json::Value;
+
+    use super::State;
 
     pub struct Runtime;
 
@@ -32,11 +41,11 @@ mod unsupported {
             Self::unsupported()
         }
 
-        pub fn list_apps(&self) -> Result<String> {
+        pub fn list_apps(&self, _include_helpers: bool) -> Result<String> {
             Self::unsupported()
         }
 
-        pub fn get_app_state(&mut self, _: &Value) -> Result<String> {
+        pub fn get_app_state(&mut self, _: &Value) -> Result<State> {
             Self::unsupported()
         }
 
@@ -53,6 +62,10 @@ mod unsupported {
         }
 
         pub fn set_value(&mut self, _: &Value) -> Result<String> {
+            Self::unsupported()
+        }
+
+        pub fn select_text(&mut self, _: &Value) -> Result<String> {
             Self::unsupported()
         }
 

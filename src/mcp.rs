@@ -10,6 +10,18 @@ use crate::tools;
 
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
 
+/// Every revision this server can answer. A client's requested revision is
+/// echoed when it is one of these, because clients reject a version they did
+/// not ask for.
+pub const SUPPORTED_VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
+
+fn negotiated_version(requested: Option<&str>) -> String {
+    match requested {
+        Some(version) if SUPPORTED_VERSIONS.contains(&version) => version.to_string(),
+        _ => PROTOCOL_VERSION.to_string(),
+    }
+}
+
 pub fn serve() -> Result<()> {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
@@ -52,7 +64,9 @@ fn handle(runtime: &mut Runtime, request: &Value) -> Option<Value> {
 
     let outcome = match method {
         "initialize" => Ok(json!({
-            "protocolVersion": PROTOCOL_VERSION,
+            "protocolVersion": negotiated_version(
+                params.get("protocolVersion").and_then(Value::as_str)
+            ),
             "capabilities": { "tools": { "listChanged": false } },
             "serverInfo": {
                 "name": "oxide-computer-use",
@@ -124,6 +138,35 @@ mod tests {
             json!("oxide-computer-use")
         );
         assert!(response["result"]["capabilities"]["tools"].is_object());
+    }
+
+    #[test]
+    fn a_client_version_we_support_is_echoed() {
+        for version in SUPPORTED_VERSIONS {
+            let response = request(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": { "protocolVersion": version }
+            }))
+            .expect("initialize is answered");
+            assert_eq!(response["result"]["protocolVersion"], json!(version));
+        }
+    }
+
+    #[test]
+    fn an_unknown_version_gets_the_newest_we_speak() {
+        let response = request(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": { "protocolVersion": "1999-01-01" }
+        }))
+        .expect("initialize is answered");
+        assert_eq!(
+            response["result"]["protocolVersion"],
+            json!(PROTOCOL_VERSION)
+        );
     }
 
     #[test]

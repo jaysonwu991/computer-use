@@ -1,6 +1,8 @@
+mod install;
 #[cfg(target_os = "macos")]
 mod macos;
 mod mcp;
+mod policy;
 mod runtime;
 mod tools;
 
@@ -11,13 +13,15 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
+use install::Client;
+use policy::Policy;
 use runtime::Runtime;
 
 #[derive(Parser)]
 #[command(
     name = "oxide-computer-use",
     version,
-    about = "Computer Use MCP server and CLI for Oxide: drive desktop apps through native accessibility APIs"
+    about = "Computer Use MCP server for any agent: Oxide, Claude Code, Codex or Cursor, driving macOS apps through native accessibility APIs"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -26,7 +30,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run the stdio MCP server that Oxide connects to.
+    /// Run the stdio MCP server that an agent connects to.
     Mcp,
     /// Call one Computer Use tool and print its MCP-style JSON result.
     Call {
@@ -38,7 +42,7 @@ enum Command {
         /// A JSON array of {"tool", "args"} calls sharing one process and one element-index state.
         #[arg(long)]
         calls: Option<String>,
-        /// Read the call array from a file instead.
+        /// Read the call array from a file instead, resolved against the current directory.
         #[arg(long = "calls-file")]
         calls_file: Option<PathBuf>,
         /// Seconds to wait between calls in a sequence.
@@ -56,18 +60,39 @@ enum Command {
         #[arg(long)]
         prompt: bool,
     },
-    /// Register this binary as an MCP server in Oxide's config.
-    InstallOxide {
-        /// Write the project config (.oxide/mcp.json) instead of the user config.
+    /// Register this binary with an MCP client.
+    #[command(alias = "install-oxide")]
+    Install {
+        /// oxide, claude, codex, cursor or desktop.
+        #[arg(long, default_value = "oxide")]
+        client: String,
+        /// Write the project-scoped config instead of the user-scoped one.
         #[arg(long)]
         project: bool,
-        /// Server name to register.
-        #[arg(long, default_value = "computer-use")]
+        /// Server name to register. Claude Code reserves `computer-use`.
+        #[arg(long, default_value = "oxide-computer-use")]
         name: String,
-        /// Print the JSON entry instead of writing a config file.
+        /// Print the config entry instead of writing a file.
         #[arg(long)]
         print: bool,
     },
+    /// Inspect or change which apps this server may touch.
+    Apps {
+        #[command(subcommand)]
+        command: AppsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum AppsCommand {
+    /// Show the app policy and the running apps it marks.
+    List,
+    /// Allow an app; with no allow list yet, this starts one.
+    Allow { app: String },
+    /// Block an app, whatever the allow list says.
+    Deny { app: String },
+    /// Clear both lists and allow every app again.
+    Reset,
 }
 
 fn main() {
@@ -101,11 +126,13 @@ fn run() -> Result<()> {
             sleep,
         }) => call(tool, args, calls, calls_file, sleep),
         Some(Command::Doctor { json, prompt }) => doctor(json, prompt),
-        Some(Command::InstallOxide {
+        Some(Command::Install {
+            client,
             project,
             name,
             print,
-        }) => install_oxide(project, &name, print),
+        }) => install::install(Client::parse(&client)?, project, &name, print),
+        Some(Command::Apps { command }) => apps(command),
     }
 }
 
@@ -130,10 +157,20 @@ fn call(
     let mut runtime = Runtime::new();
     let sequence = match (calls, calls_file) {
         (Some(text), _) => Some(text),
-        (None, Some(path)) => Some(
-            std::fs::read_to_string(&path)
-                .with_context(|| format!("reading {}", path.display()))?,
-        ),
+        (None, Some(path)) => {
+            let resolved = if path.is_absolute() {
+                path.clone()
+            } else {
+                std::env::current_dir()?.join(&path)
+            };
+            Some(std::fs::read_to_string(&resolved).with_context(|| {
+                format!(
+                    "reading {} (resolved from `{}`)",
+                    resolved.display(),
+                    path.display()
+                )
+            })?)
+        }
         (None, None) => None,
     };
 
@@ -186,10 +223,41 @@ fn report(runtime: &mut Runtime, tool: &str, args: &Value) -> Result<()> {
     }
 }
 
+fn apps(command: AppsCommand) -> Result<()> {
+    let mut policy = Policy::load();
+    match command {
+        AppsCommand::List => {
+            println!("{}", policy.describe());
+            if let Some(path) = Policy::path() {
+                println!("Config: {}", path.display());
+            }
+            println!("\nRunning apps:\n{}", Runtime::new().list_apps(false)?);
+        }
+        AppsCommand::Allow { app } => {
+            policy.allow(&app)?;
+            println!("Allowed `{app}`.");
+            println!("{}", policy.describe());
+        }
+        AppsCommand::Deny { app } => {
+            policy.deny(&app)?;
+            println!("Denied `{app}`.");
+            println!("{}", policy.describe());
+        }
+        AppsCommand::Reset => {
+            policy.clear()?;
+            println!(
+                "Cleared the app policy; every app with Accessibility access is reachable again."
+            );
+        }
+    }
+    Ok(())
+}
+
 fn doctor(as_json: bool, prompt: bool) -> Result<()> {
     let version = macos_version();
     let accessibility = accessibility(prompt);
     let screen_recording = screen_recording(prompt);
+    let policy = Policy::load();
 
     if as_json {
         println!(
@@ -199,6 +267,9 @@ fn doctor(as_json: bool, prompt: bool) -> Result<()> {
                 "macos": version,
                 "accessibility": accessibility,
                 "screen_recording": screen_recording,
+                "allowed_apps": policy.allowed(),
+                "denied_apps": policy.denied(),
+                "config": Policy::path().map(|path| path.display().to_string()),
             }))?
         );
     } else {
@@ -219,6 +290,7 @@ fn doctor(as_json: bool, prompt: bool) -> Result<()> {
                 "missing"
             }
         );
+        println!("{}", policy.describe());
         if !accessibility || !screen_recording {
             println!(
                 "\nGrant both to the terminal app that runs this server, in System Settings → Privacy & Security."
@@ -276,64 +348,6 @@ fn screen_recording(prompt: bool) -> bool {
 #[cfg(not(target_os = "macos"))]
 fn screen_recording(_prompt: bool) -> bool {
     false
-}
-
-fn install_oxide(project: bool, name: &str, print: bool) -> Result<()> {
-    let executable = std::env::current_exe().context("resolving this executable")?;
-    let entry = json!({
-        "command": executable.to_string_lossy(),
-        "args": ["mcp"]
-    });
-
-    if print {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({ "mcpServers": { name: entry } }))?
-        );
-        return Ok(());
-    }
-
-    let path = if project {
-        std::env::current_dir()?.join(".oxide").join("mcp.json")
-    } else {
-        let home = std::env::var_os("HOME").context("HOME is not set")?;
-        PathBuf::from(home).join(".oxide").join("mcp.json")
-    };
-
-    let mut root: Value = if path.exists() {
-        let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("reading {}", path.display()))?;
-        if text.trim().is_empty() {
-            json!({})
-        } else {
-            serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?
-        }
-    } else {
-        json!({})
-    };
-
-    if !root.is_object() {
-        root = json!({});
-    }
-    let object = root.as_object_mut().expect("object");
-    if !object.get("mcpServers").is_some_and(Value::is_object) {
-        object.insert("mcpServers".to_string(), json!({}));
-    }
-    object
-        .get_mut("mcpServers")
-        .and_then(Value::as_object_mut)
-        .expect("mcpServers object")
-        .insert(name.to_string(), entry);
-
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    std::fs::write(&path, format!("{}\n", serde_json::to_string_pretty(&root)?))
-        .with_context(|| format!("writing {}", path.display()))?;
-    println!("Registered `{name}` in {}", path.display());
-    println!("Run `oxide mcp list` to confirm it is visible.");
-    Ok(())
 }
 
 #[cfg(test)]

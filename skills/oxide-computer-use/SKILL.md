@@ -1,48 +1,67 @@
 ---
 name: oxide-computer-use
-description: Drive this Mac's apps through the oxide-computer-use MCP server — list apps, read an accessibility tree, then click, type, scroll or drag. Use when a task needs a GUI app Oxide cannot reach through files or a CLI.
+description: Drive this Mac's apps through the oxide-computer-use MCP server — list apps, read an accessibility tree, then click, type, select, scroll or drag. Use when a task needs a GUI app the agent cannot reach through files or a CLI.
 ---
 
 # Oxide Computer Use
 
-The `computer-use` MCP server (binary `oxide-computer-use`) exposes the desktop
-as tools. Reading is cheap; acting moves the real pointer and keyboard, so look
-first and act on what you saw.
+The `oxide-computer-use` MCP server exposes the desktop as tools. Reading is
+cheap; acting moves the real pointer and keyboard, so look first and act on what
+you saw. Some clients call the server `computer-use`; the tool names are the
+same either way.
 
 ## Loop
 
-1. `list_apps` — find the app's exact name or pid.
-2. `get_app_state` with that `app` — read the indexed tree. Line indexes are the
-   handle every later action takes.
+1. `list_apps` — find the app's exact name or pid. Add
+   `{"include_helpers": true}` when a native file picker or another
+   window-server surface seems missing.
+2. `get_app_state` with that `app` — read the indexed tree. Pass `window` (an
+   index or a title substring) when the app has more than one window; the reply
+   lists them.
 3. Act with `element_index`, or `x`/`y` from `include_frames: true`.
-4. Read again after the action. Indexes belong to the newest snapshot; an old
-   one is rejected, and that rejection means the state moved, not that the tool
-   is broken.
+4. Read again after the action. Indexes belong to the newest snapshot and to the
+   window they came from; a refusal means the state moved, not that the tool is
+   broken.
 
 ## Choosing a tool
 
-- `click` uses the element's AXPress action when it has one. A control that
-  refuses AXPress gets a pointer click at its center, which needs the app in
-  front.
-- `set_value` is the reliable way to fill a text field; `type_text` needs the
-  control focused and the app frontmost.
+- `click` uses the element's AXPress action when it has one; the reply says
+  whether it used AXPress or a pointer event.
+- `set_value` is the reliable way to fill a text field, and it fails loudly when
+  a control is read-only or ignores the write. `type_text` needs the control
+  focused and the app frontmost.
+- `select_text` marks a span for copying or for a following `press_key`.
 - `press_key` takes one key plus `modifiers` (`cmd`, `shift`, `alt`, `ctrl`),
   for example `{"key":"s","modifiers":"cmd"}` to save.
 - `query` when a tree is large: filter by text or role, and take the index from
   its output, which also refreshes the snapshot.
-- `perform_secondary_action` for AX actions such as `AXShowMenu` on a row.
-- `screenshot` only when the tree is not enough — it needs Screen Recording,
-  and the image is a PNG part an agent may not be able to see.
+- `perform_secondary_action` for AX actions such as `AXShowMenu` on a row; an
+  unsupported action comes back with the list the element does support.
+- `screenshot`, or `get_app_state` with `include_screenshot: true`, only when
+  the tree is not enough — it needs Screen Recording, and not every agent can
+  see the image.
+
+## Keeping context small
+
+- `max_output_chars` caps a reply; the truncation note says so.
+- `query` replaces a full tree dump when you know what you are looking for.
+- `text_limit: "max"` is for the one field you must read in full; the default
+  truncates long values with their true length.
+- Screenshots are never attached unless you ask.
 
 ## Failures worth reading
 
-- `Accessibility permission is missing` — the terminal running the server is
-  not trusted. Run `oxide-computer-use doctor --prompt`, approve it in System
+- `` `X` is on the deny list `` or `` not on the allow list `` — the local app
+  policy. `oxide-computer-use apps allow "X"` changes it; do not work around it.
+- `Accessibility permission is missing` — the terminal running the server is not
+  trusted. Run `oxide-computer-use doctor --prompt`, approve it in System
   Settings → Privacy & Security → Accessibility, then restart the server.
-- `kAXErrorCannotComplete` — the app is busy, modal, or unresponsive. Wait,
-  then read the tree again rather than repeating the click.
-- `the element changed since the snapshot` — call `get_app_state` before
-  retrying; the index no longer points at what you saw.
+- `kAXErrorCannotComplete` — the app is busy, modal, or unresponsive. Wait, then
+  read the tree again rather than repeating the click.
+- `is no longer in the window the snapshot bound it to` or `out of range` — call
+  `get_app_state` before retrying; the index no longer points at what you saw.
+- `reports AXValue as not settable` — use `click` to focus it and `type_text`
+  instead, or `press_key` between segments for date fields.
 
 ## Rules
 

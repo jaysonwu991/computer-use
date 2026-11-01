@@ -19,7 +19,6 @@ extern "C" {
     static kCGWindowBounds: CFTypeRef;
 }
 
-const ON_SCREEN_ONLY: u32 = 1;
 const EXCLUDE_DESKTOP_ELEMENTS: u32 = 1 << 4;
 const NULL_WINDOW: u32 = 0;
 
@@ -39,6 +38,35 @@ pub struct App {
     pub pid: i32,
     pub name: String,
     pub windows: Vec<Window>,
+}
+
+/// A window a person could point at: not a menu-bar strip, not a 1-pixel
+/// helper, and not one of the window-server agents that own surfaces without
+/// being apps.
+fn is_usable(owner: &str, window: &Window) -> bool {
+    if window.layer != 0 || window.width < 120.0 || window.height < 80.0 {
+        return false;
+    }
+    !is_helper(owner)
+}
+
+/// Window-server agents that own surfaces without being apps, such as the
+/// menu-bar strips and the save-panel service. `list_apps` hides them by
+/// default; `include_helpers` shows them, which is the only way to reach a
+/// native file picker that is not part of its app.
+fn is_helper(owner: &str) -> bool {
+    matches!(
+        owner,
+        "Window Server"
+            | "loginwindow"
+            | "Dock"
+            | "Control Center"
+            | "Notification Center"
+            | "通知中心"
+            | "SystemUIServer"
+            | "通用控制"
+            | "自动填充"
+    ) || owner.ends_with("Service")
 }
 
 pub fn screen_recording_allowed() -> bool {
@@ -84,11 +112,18 @@ fn bounds(dict: CFDictionaryRef) -> Option<(f64, f64, f64, f64)> {
 }
 
 /// Every window the window server reports, grouped into applications.
+///
+/// Windows in another Space are included on purpose: accessibility actions
+/// still reach those apps, and a full-screen app in its own Space must not make
+/// the rest of the desktop look unavailable.
 pub fn running_apps() -> Vec<App> {
+    running_apps_with(false)
+}
+
+pub fn running_apps_with(include_helpers: bool) -> Vec<App> {
     let mut apps: Vec<App> = Vec::new();
     unsafe {
-        let list =
-            CGWindowListCopyWindowInfo(ON_SCREEN_ONLY | EXCLUDE_DESKTOP_ELEMENTS, NULL_WINDOW);
+        let list = CGWindowListCopyWindowInfo(EXCLUDE_DESKTOP_ELEMENTS, NULL_WINDOW);
         let Some(owned) = cf::Owned::from_create(list as CFTypeRef) else {
             return apps;
         };
@@ -117,6 +152,9 @@ pub fn running_apps() -> Vec<App> {
                 width,
                 height,
             };
+            if !include_helpers && !is_usable(&name, &window) {
+                continue;
+            }
             match apps.iter_mut().find(|app| app.pid == pid) {
                 Some(app) => app.windows.push(window),
                 None => apps.push(App {
@@ -134,7 +172,7 @@ pub fn running_apps() -> Vec<App> {
     apps
 }
 
-/// Normal (layer 0) windows owned by one process.
+/// Usable windows owned by one process.
 pub fn windows_for(pid: i32) -> Vec<Window> {
     running_apps()
         .into_iter()
@@ -147,7 +185,7 @@ pub fn windows_for(pid: i32) -> Vec<Window> {
 /// Resolves `app` against the running applications: exact name first, then a
 /// case-insensitive substring, then the process id when the value is numeric.
 pub fn resolve(app: &str) -> Option<App> {
-    let apps = running_apps();
+    let apps = running_apps_with(true);
     if let Ok(pid) = app.trim().parse::<i32>() {
         if let Some(found) = apps.iter().find(|candidate| candidate.pid == pid) {
             return Some(found.clone());

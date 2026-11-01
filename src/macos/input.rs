@@ -29,7 +29,15 @@ extern "C" {
     fn CGEventSetLocation(event: CGEventRef, location: CGPoint);
     fn CGEventSetIntegerValueField(event: CGEventRef, field: u32, value: i64);
     fn CGEventPost(tap: u32, event: CGEventRef);
+    fn CGEventSourceCreate(state_id: i32) -> CFTypeRef;
+    fn CGEventSourceSetLocalEventsSuppressionInterval(source: CFTypeRef, seconds: f64);
 }
+
+const HID_SYSTEM_STATE: i32 = 0;
+const MOUSE_EVENT_DELTA_X: u32 = 4;
+const MOUSE_EVENT_DELTA_Y: u32 = 5;
+const UI_SETTLED: Duration = Duration::from_millis(35);
+const DRAG_STEP: Duration = Duration::from_millis(12);
 
 const HID_EVENT_TAP: u32 = 0;
 
@@ -39,6 +47,8 @@ const RIGHT_MOUSE_DOWN: u32 = 3;
 const RIGHT_MOUSE_UP: u32 = 4;
 const MOUSE_MOVED: u32 = 5;
 const LEFT_MOUSE_DRAGGED: u32 = 6;
+
+use std::time::Duration;
 
 const SCROLL_UNIT_LINE: u32 = 1;
 const MOUSE_EVENT_CLICK_STATE: u32 = 1;
@@ -56,7 +66,39 @@ impl Drop for Event {
     }
 }
 
-fn post(raw: CGEventRef) -> Result<()> {
+/// A private HID event source: without it the window server may coalesce or
+/// suppress events that arrive faster than a person could produce them.
+struct Source(CFTypeRef);
+
+impl Source {
+    fn hid() -> Source {
+        unsafe {
+            let raw = CGEventSourceCreate(HID_SYSTEM_STATE);
+            if !raw.is_null() {
+                CGEventSourceSetLocalEventsSuppressionInterval(raw, 0.0);
+            }
+            Source(raw)
+        }
+    }
+
+    fn raw(&self) -> CFTypeRef {
+        self.0
+    }
+}
+
+impl Drop for Source {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { CFRelease(self.0) }
+        }
+    }
+}
+
+fn pace(duration: Duration) {
+    std::thread::sleep(duration);
+}
+
+fn post(raw: CFTypeRef) -> Result<()> {
     if raw.is_null() {
         bail!("the window server refused to create the event");
     }
@@ -70,25 +112,18 @@ pub fn click(point: CGPoint, button: Button) -> Result<()> {
         Button::Left => (LEFT_MOUSE_DOWN, LEFT_MOUSE_UP, 0),
         Button::Right => (RIGHT_MOUSE_DOWN, RIGHT_MOUSE_UP, 1),
     };
+    let source = Source::hid();
     unsafe {
-        post(CGEventCreateMouseEvent(
-            std::ptr::null(),
-            MOUSE_MOVED,
-            point,
-            0,
-        ))?;
-        let down_event = Event(CGEventCreateMouseEvent(
-            std::ptr::null(),
-            down,
-            point,
-            index,
-        ));
+        post(CGEventCreateMouseEvent(source.raw(), MOUSE_MOVED, point, 0))?;
+        pace(UI_SETTLED);
+        let down_event = Event(CGEventCreateMouseEvent(source.raw(), down, point, index));
         if down_event.0.is_null() {
             bail!("the window server refused to create the mouse event");
         }
         CGEventSetIntegerValueField(down_event.0, MOUSE_EVENT_CLICK_STATE, 1);
         CGEventPost(HID_EVENT_TAP, down_event.0);
-        post(CGEventCreateMouseEvent(std::ptr::null(), up, point, index))?;
+        pace(UI_SETTLED);
+        post(CGEventCreateMouseEvent(source.raw(), up, point, index))?;
     }
     Ok(())
 }
@@ -98,40 +133,61 @@ pub enum Button {
     Right,
 }
 
+/// A drag that a window manager and a text view both accept: the pointer
+/// arrives, the button goes down after the app has seen the move, the steps are
+/// paced, and the button comes up only after the last step landed.
 pub fn drag(from: CGPoint, to: CGPoint) -> Result<()> {
+    let source = Source::hid();
     unsafe {
-        post(CGEventCreateMouseEvent(
-            std::ptr::null(),
-            MOUSE_MOVED,
-            from,
-            0,
-        ))?;
-        post(CGEventCreateMouseEvent(
-            std::ptr::null(),
+        post(CGEventCreateMouseEvent(source.raw(), MOUSE_MOVED, from, 0))?;
+        pace(UI_SETTLED);
+        let down_event = Event(CGEventCreateMouseEvent(
+            source.raw(),
             LEFT_MOUSE_DOWN,
             from,
             0,
-        ))?;
-        let steps = 12;
+        ));
+        if down_event.0.is_null() {
+            bail!("the window server refused to create the mouse event");
+        }
+        CGEventSetIntegerValueField(down_event.0, MOUSE_EVENT_CLICK_STATE, 1);
+        CGEventPost(HID_EVENT_TAP, down_event.0);
+        pace(UI_SETTLED);
+
+        let steps = 16;
+        let mut previous = from;
         for step in 1..=steps {
             let ratio = step as f64 / steps as f64;
             let point = CGPoint {
                 x: from.x + (to.x - from.x) * ratio,
                 y: from.y + (to.y - from.y) * ratio,
             };
-            post(CGEventCreateMouseEvent(
-                std::ptr::null(),
+            let event = Event(CGEventCreateMouseEvent(
+                source.raw(),
                 LEFT_MOUSE_DRAGGED,
                 point,
                 0,
-            ))?;
+            ));
+            if event.0.is_null() {
+                bail!("the window server refused to create the drag event");
+            }
+            CGEventSetIntegerValueField(
+                event.0,
+                MOUSE_EVENT_DELTA_X,
+                (point.x - previous.x) as i64,
+            );
+            CGEventSetIntegerValueField(
+                event.0,
+                MOUSE_EVENT_DELTA_Y,
+                (point.y - previous.y) as i64,
+            );
+            CGEventPost(HID_EVENT_TAP, event.0);
+            previous = point;
+            pace(DRAG_STEP);
         }
-        post(CGEventCreateMouseEvent(
-            std::ptr::null(),
-            LEFT_MOUSE_UP,
-            to,
-            0,
-        ))?;
+
+        pace(UI_SETTLED);
+        post(CGEventCreateMouseEvent(source.raw(), LEFT_MOUSE_UP, to, 0))?;
     }
     Ok(())
 }
