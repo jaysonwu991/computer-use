@@ -258,15 +258,11 @@ fn a_missing_calls_file_names_the_resolved_path() {
 }
 
 #[test]
-fn non_ascii_names_survive_the_stdio_transport() {
-    let home = temporary_home("utf8");
-    let (_, _, ok) = run_with_home(&home, &["apps", "deny", "终端"]);
-    assert!(ok);
-
+fn non_ascii_text_survives_the_stdio_transport() {
+    // The reply is produced by this server alone: no app, permission or policy
+    // is involved, so the check holds on any machine.
     let mut child = Command::new(binary())
         .arg("mcp")
-        .env("HOME", &home)
-        .env_remove("COMPUTER_USE_CONFIG")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -276,18 +272,17 @@ fn non_ascii_names_survive_the_stdio_transport() {
     writeln!(
         stdin,
         "{}",
-        json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_app_state", "arguments": {"app": "终端"}}})
+        json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "工具", "arguments": {}}})
     )
     .unwrap();
     drop(stdin);
     let output = child.wait_with_output().expect("the server exits");
     let stdout = String::from_utf8(output.stdout).expect("stdout is UTF-8");
     let response: Value = serde_json::from_str(stdout.trim()).expect("one JSON packet");
+    assert_eq!(response["result"]["isError"], json!(true));
     let text = response["result"]["content"][0]["text"]
         .as_str()
         .unwrap_or_default();
-    assert!(text.contains("终端"), "the app name was mangled: {text}");
-    assert!(text.contains("deny list"), "{text}");
-
-    std::fs::remove_dir_all(&home).ok();
+    assert!(text.contains("工具"), "the name was mangled: {text}");
+    assert!(text.contains("unknown tool"), "{text}");
 }
